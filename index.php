@@ -7,13 +7,36 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     stkPush($phone, $amount);
 }
 
+// Load environment variables from .env file
+function loadEnv() {
+    $envFile = __DIR__ . '/.env';
+    if (file_exists($envFile)) {
+        $lines = file($envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+        foreach ($lines as $line) {
+            if (strpos(trim($line), '#') === 0) continue; // Skip comments
+            
+            list($name, $value) = explode('=', $line, 2);
+            $name = trim($name);
+            $value = trim($value);
+            
+            if (!array_key_exists($name, $_ENV)) {
+                $_ENV[$name] = $value;
+                putenv("$name=$value");
+            }
+        }
+    }
+}
+
+// Call the function to load environment variables
+loadEnv();
+
 function stkPush($phoneNumber, $amount) {
-    // Your Daraja credentials
-    $consumerKey    = "YOUR_CONSUMER_KEY";
-    $consumerSecret = "YOUR_CONSUMER_SECRET";
-    $shortCode      = "174379"; // Sandbox shortcode
-    $passkey        = "YOUR_LNM_PASSKEY";
-    $callbackURL    = "https://mpesa.werevu.co.ke/callback.php"; // Public callback
+    // Load credentials from environment variables
+    $consumerKey    = getenv('MPESA_CONSUMER_KEY');
+    $consumerSecret = getenv('MPESA_CONSUMER_SECRET');
+    $shortCode      = getenv('MPESA_SHORTCODE');
+    $passkey        = getenv('MPESA_PASSKEY');
+    $callbackURL    = getenv('MPESA_CALLBACK_URL');
 
     // Step 1: Access token
     $credentials = base64_encode($consumerKey . ":" . $consumerSecret);
