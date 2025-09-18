@@ -5,11 +5,9 @@ require __DIR__ . '/vendor/autoload.php';
 // Load environment variables using Dotenv
 use Dotenv\Dotenv;
 
-// Create Dotenv instance
-$dotenv = Dotenv::createImmutable(__DIR__);
-
-// Load environment variables
+// Create Dotenv instance and load environment variables
 try {
+    $dotenv = Dotenv::createImmutable(__DIR__);
     $dotenv->load();
     
     // Ensure required environment variables are set
@@ -20,19 +18,6 @@ try {
         'MPESA_SHORTCODE',
         'MPESA_CALLBACK_URL'
     ]);
-    
-    // Debug: Show loaded environment variables (comment out in production)
-    if (isset($_GET['debug']) && $_GET['debug'] === 'env') {
-        echo '<pre>';
-        echo 'Environment Variables Status:' . "\n";
-        echo 'MPESA_CONSUMER_KEY: ' . (getenv('MPESA_CONSUMER_KEY') ? 'Set' : 'Not Set') . "\n";
-        echo 'MPESA_CONSUMER_SECRET: ' . (getenv('MPESA_CONSUMER_SECRET') ? 'Set' : 'Not Set') . "\n";
-        echo 'MPESA_PASSKEY: ' . (getenv('MPESA_PASSKEY') ? 'Set' : 'Not Set') . "\n";
-        echo 'MPESA_SHORTCODE: ' . (getenv('MPESA_SHORTCODE') ? 'Set' : 'Not Set') . "\n";
-        echo 'MPESA_CALLBACK_URL: ' . (getenv('MPESA_CALLBACK_URL') ? 'Set' : 'Not Set') . "\n";
-        echo '</pre>';
-        exit;
-    }
     
 } catch (Exception $e) {
     die('Error loading environment variables: ' . $e->getMessage());
@@ -60,10 +45,6 @@ function stkPush($phoneNumber, $amount) {
         $passkey        = $_ENV['MPESA_PASSKEY'] ?? '';
         $callbackURL    = $_ENV['MPESA_CALLBACK_URL'] ?? '';
         
-        // Debug: Log the credentials (remove in production)
-        error_log("Using consumer key: " . substr($consumerKey, 0, 5) . "...");
-        error_log("Using shortcode: $shortCode");
-
         // Validate required environment variables
         if (empty($consumerKey) || empty($consumerSecret) || empty($shortCode) || empty($passkey)) {
             throw new Exception("One or more required M-Pesa credentials are missing. Please check your .env file.");
@@ -102,14 +83,11 @@ function stkPush($phoneNumber, $amount) {
     }
 
     $access_token = $responseData->access_token;
-    error_log("Successfully obtained access token");
 
     // Step 2: Generate Password
     $timestamp = date("YmdHis");
     $password  = base64_encode($shortCode . $passkey . $timestamp);
     
-    // Log the generated password (first 10 chars for security)
-    error_log("Generated password (first 10 chars): " . substr($password, 0, 10) . "...");
 
     // Step 3: STK Push payload
     $stkPayload = array(
@@ -166,35 +144,22 @@ function stkPush($phoneNumber, $amount) {
         throw new Exception("Invalid JSON response from M-Pesa API: " . $response);
     }
     
-    // Log the successful response
-    error_log("STK Push initiated successfully. Response: " . json_encode($responseData));
 
-    // Display the response in a more readable format
-    echo "<h3>Payment Request Status</h3>";
-    echo "<pre>";
-    print_r($responseData);
-    echo "</pre>";
-    
     // Check for specific error codes
     if (isset($responseData['errorCode'])) {
-        $errorMessage = "Error {$responseData['errorCode']}: {$responseData['errorMessage']}";
-        error_log($errorMessage);
-        throw new Exception($errorMessage);
+        throw new Exception("{$responseData['errorMessage']} (Error Code: {$responseData['errorCode']})");
     }
     
     return $responseData;
     
     } catch (Exception $e) {
-        // Log the error
-        error_log("Error in stkPush: " . $e->getMessage());
-        
         // Display a user-friendly error message
         echo "<div class='alert alert-danger'>";
         echo "<strong>Error:</strong> " . htmlspecialchars($e->getMessage());
         echo "</div>";
         
-        // Re-throw the exception for further handling if needed
-        throw $e;
+        // Log the error for debugging
+        error_log("M-Pesa Payment Error: " . $e->getMessage());
     }
 }
 ?>
