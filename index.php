@@ -1,105 +1,73 @@
 <?php
-// Debug: Check environment variables
-function debugEnvVars() {
-    $required = ['MPESA_CONSUMER_KEY', 'MPESA_CONSUMER_SECRET', 'MPESA_PASSKEY', 'MPESA_SHORTCODE'];
-    $envVars = [];
+// Require Composer's autoloader
+require __DIR__ . '/vendor/autoload.php';
+
+// Load environment variables using Dotenv
+use Dotenv\Dotenv;
+
+// Create Dotenv instance
+$dotenv = Dotenv::createImmutable(__DIR__);
+
+// Load environment variables
+try {
+    $dotenv->load();
     
-    foreach ($required as $var) {
-        $envVars[$var] = getenv($var) ? 'Set' : 'Not Set';
+    // Ensure required environment variables are set
+    $dotenv->required([
+        'MPESA_CONSUMER_KEY',
+        'MPESA_CONSUMER_SECRET',
+        'MPESA_PASSKEY',
+        'MPESA_SHORTCODE',
+        'MPESA_CALLBACK_URL'
+    ]);
+    
+    // Debug: Show loaded environment variables (comment out in production)
+    if (isset($_GET['debug']) && $_GET['debug'] === 'env') {
+        echo '<pre>';
+        echo 'Environment Variables Status:' . "\n";
+        echo 'MPESA_CONSUMER_KEY: ' . (getenv('MPESA_CONSUMER_KEY') ? 'Set' : 'Not Set') . "\n";
+        echo 'MPESA_CONSUMER_SECRET: ' . (getenv('MPESA_CONSUMER_SECRET') ? 'Set' : 'Not Set') . "\n";
+        echo 'MPESA_PASSKEY: ' . (getenv('MPESA_PASSKEY') ? 'Set' : 'Not Set') . "\n";
+        echo 'MPESA_SHORTCODE: ' . (getenv('MPESA_SHORTCODE') ? 'Set' : 'Not Set') . "\n";
+        echo 'MPESA_CALLBACK_URL: ' . (getenv('MPESA_CALLBACK_URL') ? 'Set' : 'Not Set') . "\n";
+        echo '</pre>';
+        exit;
     }
     
-    echo '<pre>';
-    echo 'Environment Variables Status:\n';
-    print_r($envVars);
-    echo '\nCurrent Directory: ' . __DIR__ . '\n';
-    echo 'File Exists: ' . (file_exists(__DIR__ . '/.env') ? 'Yes' : 'No') . '\n';
-    echo '</pre>';
+} catch (Exception $e) {
+    die('Error loading environment variables: ' . $e->getMessage());
 }
 
-// Debug environment variables
-debugEnvVars();
-
 if ($_SERVER["REQUEST_METHOD"] == "POST") {
-    $phone = $_POST["phone"];
-    $amount = $_POST["amount"];
+    $phone = $_POST["phone"] ?? '';
+    $amount = $_POST["amount"] ?? 0;
+
+    // Basic input validation
+    if (empty($phone) || empty($amount)) {
+        die('Error: Phone number and amount are required');
+    }
 
     // Call STK Push
     stkPush($phone, $amount);
 }
 
-// Load environment variables from .env file
-function loadEnv() {
-    $envFile = __DIR__ . '/.env';
-    
-    // Debug: Check if .env file exists and is readable
-    if (!file_exists($envFile)) {
-        die("Error: .env file not found at: " . $envFile);
-    }
-    
-    if (!is_readable($envFile)) {
-        die("Error: .env file is not readable. Check permissions.");
-    }
-    
-    $lines = file($envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-    if ($lines === false) {
-        die("Error: Failed to read .env file");
-    }
-    
-    foreach ($lines as $line) {
-        $line = trim($line);
-        
-        // Skip comments and empty lines
-        if (empty($line) || strpos($line, '#') === 0) {
-            continue;
-        }
-        
-        // Parse the line into name and value
-        if (strpos($line, '=') !== false) {
-            list($name, $value) = array_map('trim', explode('=', $line, 2));
-            
-            // Remove optional quotes from the value
-            $value = trim($value, '"\'');
-            
-            // Set the environment variable if it doesn't exist
-            if (!array_key_exists($name, $_ENV)) {
-                $_ENV[$name] = $value;
-                putenv("$name=$value");
-            }
-        }
-    }
-    
-    // Debug: Check if required variables are set
-    $requiredVars = ['MPESA_CONSUMER_KEY', 'MPESA_CONSUMER_SECRET', 'MPESA_PASSKEY', 'MPESA_SHORTCODE'];
-    $missingVars = [];
-    
-    foreach ($requiredVars as $var) {
-        if (empty(getenv($var))) {
-            $missingVars[] = $var;
-        }
-    }
-    
-    if (!empty($missingVars)) {
-        die("Error: The following required environment variables are missing or empty: " . 
-            implode(', ', $missingVars) . 
-            ". Please check your .env file.");
-    }
-}
-
-// Call the function to load environment variables
-loadEnv();
-
 function stkPush($phoneNumber, $amount) {
-    // Load credentials from environment variables
-    $consumerKey    = getenv('MPESA_CONSUMER_KEY');
-    $consumerSecret = getenv('MPESA_CONSUMER_SECRET');
-    $shortCode      = getenv('MPESA_SHORTCODE');
-    $passkey        = getenv('MPESA_PASSKEY');
-    $callbackURL    = getenv('MPESA_CALLBACK_URL');
+    try {
+        // Load credentials from environment variables using Dotenv
+        $consumerKey    = $_ENV['MPESA_CONSUMER_KEY'] ?? '';
+        $consumerSecret = $_ENV['MPESA_CONSUMER_SECRET'] ?? '';
+        $shortCode      = $_ENV['MPESA_SHORTCODE'] ?? '';
+        $passkey        = $_ENV['MPESA_PASSKEY'] ?? '';
+        $callbackURL    = $_ENV['MPESA_CALLBACK_URL'] ?? '';
+        
+        // Debug: Log the credentials (remove in production)
+        error_log("Using consumer key: " . substr($consumerKey, 0, 5) . "...");
+        error_log("Using shortcode: $shortCode");
 
-    // Debug: Check if environment variables are loaded
-    if (empty($consumerKey) || empty($consumerSecret)) {
-        die("Error: M-Pesa credentials not found. Please check your .env file.");
-    }
+        // Validate required environment variables
+        if (empty($consumerKey) || empty($consumerSecret) || empty($shortCode) || empty($passkey)) {
+            throw new Exception("One or more required M-Pesa credentials are missing. Please check your .env file.");
+        }
 
     // Step 1: Get Access Token
     $credentials = base64_encode($consumerKey . ":" . $consumerSecret);
@@ -134,10 +102,14 @@ function stkPush($phoneNumber, $amount) {
     }
 
     $access_token = $responseData->access_token;
+    error_log("Successfully obtained access token");
 
-    // Step 2: Password
+    // Step 2: Generate Password
     $timestamp = date("YmdHis");
     $password  = base64_encode($shortCode . $passkey . $timestamp);
+    
+    // Log the generated password (first 10 chars for security)
+    error_log("Generated password (first 10 chars): " . substr($password, 0, 10) . "...");
 
     // Step 3: STK Push payload
     $stkPayload = array(
@@ -186,13 +158,16 @@ function stkPush($phoneNumber, $amount) {
 
     // Process the response
     if ($httpCode !== 200) {
-        die("Failed to initiate STK push. HTTP Code: $httpCode");
+        throw new Exception("Failed to initiate STK push. HTTP Code: $httpCode. Response: $response");
     }
 
     $responseData = json_decode($response, true);
     if (json_last_error() !== JSON_ERROR_NONE) {
-        die("Invalid JSON response from M-Pesa API: " . $response);
+        throw new Exception("Invalid JSON response from M-Pesa API: " . $response);
     }
+    
+    // Log the successful response
+    error_log("STK Push initiated successfully. Response: " . json_encode($responseData));
 
     // Display the response in a more readable format
     echo "<h3>Payment Request Status</h3>";
@@ -202,9 +177,24 @@ function stkPush($phoneNumber, $amount) {
     
     // Check for specific error codes
     if (isset($responseData['errorCode'])) {
+        $errorMessage = "Error {$responseData['errorCode']}: {$responseData['errorMessage']}";
+        error_log($errorMessage);
+        throw new Exception($errorMessage);
+    }
+    
+    return $responseData;
+    
+    } catch (Exception $e) {
+        // Log the error
+        error_log("Error in stkPush: " . $e->getMessage());
+        
+        // Display a user-friendly error message
         echo "<div class='alert alert-danger'>";
-        echo "<strong>Error {$responseData['errorCode']}:</strong> {$responseData['errorMessage']}";
+        echo "<strong>Error:</strong> " . htmlspecialchars($e->getMessage());
         echo "</div>";
+        
+        // Re-throw the exception for further handling if needed
+        throw $e;
     }
 }
 ?>
