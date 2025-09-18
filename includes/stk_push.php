@@ -106,7 +106,7 @@ function stkPush($phoneNumber, $amount) {
             throw new Exception("M-Pesa Error ($errorCode): $errorMessage");
         }
 
-        // Return success response
+        // Return success response with checkoutRequestID
         return [
             'success' => true,
             'merchantRequestID' => $responseData->MerchantRequestID ?? '',

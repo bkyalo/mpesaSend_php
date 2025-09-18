@@ -70,7 +70,8 @@ try {
     // If we get here, the STK push was initiated successfully
     sendJsonResponse([
         'success' => true,
-        'message' => 'Payment request sent successfully. Please check your phone to complete the payment.'
+        'message' => 'Payment request sent successfully. Please check your phone to complete the payment.',
+        'checkoutRequestID' => $result['checkoutRequestID'] ?? ''
     ]);
     
 } catch (Exception $e) {

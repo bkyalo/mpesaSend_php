@@ -222,7 +222,14 @@
                     return data;
                 })
                 .then(data => {
-                    showSuccess(data.message || 'Payment request sent successfully! Please check your phone to complete the payment.');
+                    // Show processing message instead of success
+                    const checkoutRequestID = data.checkoutRequestID;
+                    if (checkoutRequestID) {
+                        // Start polling for payment status
+                        pollPaymentStatus(checkoutRequestID);
+                    } else {
+                        throw new Error('Invalid response from server: Missing checkout request ID');
+                    }
                 })
                 .catch(error => {
                     console.error('Error:', error);
@@ -261,6 +268,54 @@
                 errorMessage.textContent = message;
                 submitBtn.disabled = false;
                 submitBtn.innerHTML = '<i class="fas fa-paper-plane me-2"></i> Try Again';
+            }
+            
+            // Poll payment status
+            function pollPaymentStatus(checkoutRequestID, attempt = 1) {
+                const maxAttempts = 30; // 30 attempts * 5 seconds = 2.5 minutes total
+                
+                if (attempt > maxAttempts) {
+                    showError('Payment verification timed out. Please check your M-Pesa statement to confirm payment.');
+                    return;
+                }
+                
+                fetch(`/api/check_payment.php?checkoutRequestID=${encodeURIComponent(checkoutRequestID)}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.error) {
+                            throw new Error(data.error);
+                        }
+                        
+                        switch (data.status) {
+                            case 'completed':
+                                // Payment completed successfully
+                                showSuccess('Payment completed successfully! Thank you for your purchase.');
+                                break;
+                                
+                            case 'cancelled':
+                                showError('Payment was cancelled. Please try again if you wish to complete your purchase.');
+                                break;
+                                
+                            case 'timeout':
+                                showError('Payment request timed out. Please try again.');
+                                break;
+                                
+                            case 'pending':
+                            default:
+                                // Continue polling after a delay
+                                setTimeout(() => {
+                                    pollPaymentStatus(checkoutRequestID, attempt + 1);
+                                }, 5000); // Check every 5 seconds
+                                break;
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error checking payment status:', error);
+                        // Continue polling on error (network issues, etc.)
+                        setTimeout(() => {
+                            pollPaymentStatus(checkoutRequestID, attempt + 1);
+                        }, 5000);
+                    });
             }
         });
     </script>
