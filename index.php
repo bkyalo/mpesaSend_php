@@ -13,7 +13,7 @@ function stkPush($phoneNumber, $amount) {
     $consumerSecret = "YOUR_CONSUMER_SECRET";
     $shortCode      = "174379"; // Sandbox shortcode
     $passkey        = "YOUR_LNM_PASSKEY";
-    $callbackURL    = "https://yourdomain.com/callback.php"; // Public callback
+    $callbackURL    = "https://mpesa.werevu.co.ke/callback.php"; // Public callback
 
     // Step 1: Access token
     $credentials = base64_encode($consumerKey . ":" . $consumerSecret);
@@ -66,20 +66,144 @@ function stkPush($phoneNumber, $amount) {
 ?>
 
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Pay with M-Pesa</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>M-Pesa Payment Gateway</title>
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        body {
+            background-color: #f8f9fa;
+        }
+        .payment-card {
+            border: none;
+            border-radius: 15px;
+            box-shadow: 0 6px 15px rgba(0,0,0,0.1);
+            transition: transform 0.3s ease;
+        }
+        .payment-card:hover {
+            transform: translateY(-5px);
+        }
+        .header-bg {
+            background: linear-gradient(135deg, #00B300 0%, #008000 100%);
+            border-radius: 15px 15px 0 0;
+        }
+        .btn-mpesa {
+            background-color: #00B300;
+            border: none;
+            padding: 12px 30px;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+        }
+        .btn-mpesa:hover {
+            background-color: #008000;
+        }
+        .form-control:focus {
+            border-color: #00B300;
+            box-shadow: 0 0 0 0.25rem rgba(0, 179, 0, 0.25);
+        }
+    </style>
 </head>
-<body>
-    <h2>Enter Phone Number to Pay</h2>
-    <form method="POST">
-        <label>Phone Number (2547XXXXXXXX):</label><br>
-        <input type="text" name="phone" required><br><br>
+<body class="bg-light">
+    <div class="container py-5">
+        <div class="row justify-content-center">
+            <div class="col-md-6 col-lg-5">
+                <div class="card payment-card">
+                    <div class="header-bg text-white text-center py-4">
+                        <h3><i class="fas fa-mobile-alt me-2"></i> M-Pesa Payment</h3>
+                        <p class="mb-0">Secure and instant mobile payments</p>
+                    </div>
+                    <div class="card-body p-4">
+                        <form method="POST" class="needs-validation" novalidate>
+                            <div class="mb-4">
+                                <label for="phone" class="form-label fw-bold">Phone Number</label>
+                                <div class="input-group">
+                                    <span class="input-group-text"><i class="fas fa-phone"></i></span>
+                                    <input type="text" 
+                                           class="form-control form-control-lg" 
+                                           id="phone" 
+                                           name="phone" 
+                                           placeholder="e.g. 2547XXXXXXXX" 
+                                           pattern="^254\d{9}$"
+                                           required>
+                                </div>
+                                <div class="form-text">Enter your M-Pesa number in format 2547XXXXXXXX</div>
+                                <div class="invalid-feedback">
+                                    Please enter a valid M-Pesa number (e.g., 254712345678)
+                                </div>
+                            </div>
 
-        <label>Amount:</label><br>
-        <input type="number" name="amount" required><br><br>
+                            <div class="mb-4">
+                                <label for="amount" class="form-label fw-bold">Amount (KES)</label>
+                                <div class="input-group">
+                                    <span class="input-group-text"><i class="fas fa-money-bill-wave"></i></span>
+                                    <input type="number" 
+                                           class="form-control form-control-lg" 
+                                           id="amount" 
+                                           name="amount" 
+                                           min="1" 
+                                           step="1" 
+                                           placeholder="Enter amount" 
+                                           required>
+                                </div>
+                                <div class="invalid-feedback">
+                                    Please enter a valid amount
+                                </div>
+                            </div>
 
-        <button type="submit">Pay Now</button>
-    </form>
+                            <div class="d-grid gap-2 mt-5">
+                                <button type="submit" class="btn btn-lg btn-mpesa text-white">
+                                    <i class="fas fa-paper-plane me-2"></i> Send Payment Request
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                    <div class="card-footer bg-transparent text-center py-3">
+                        <small class="text-muted">
+                            <i class="fas fa-lock me-1"></i> Secure payment powered by Safaricom M-Pesa
+                        </small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap Bundle with Popper -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Form validation
+        (function () {
+            'use strict'
+            
+            var forms = document.querySelectorAll('.needs-validation')
+            
+            Array.prototype.slice.call(forms)
+                .forEach(function (form) {
+                    form.addEventListener('submit', function (event) {
+                        if (!form.checkValidity()) {
+                            event.preventDefault()
+                            event.stopPropagation()
+                        }
+                        
+                        form.classList.add('was-validated')
+                    }, false)
+                })
+        })()
+
+        // Format phone number
+        document.getElementById('phone').addEventListener('input', function (e) {
+            let value = e.target.value.replace(/\D/g, '');
+            if (value.startsWith('0')) {
+                value = '254' + value.substring(1);
+            } else if (value.startsWith('7') || value.startsWith('1')) {
+                value = '254' + value;
+            }
+            e.target.value = value;
+        });
+    </script>
 </body>
 </html>
