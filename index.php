@@ -1,216 +1,7 @@
 <?php
-// Require Composer's autoloader
-require __DIR__ . '/vendor/autoload.php';
-
-// Load environment variables using Dotenv
-use Dotenv\Dotenv;
-
-// Set content type to JSON for AJAX responses
-header('Content-Type: application/json');
-
-function sendJsonResponse($data, $statusCode = 200) {
-    http_response_code($statusCode);
-    echo json_encode($data);
-    exit;
-}
-
-// Create Dotenv instance and load environment variables
-try {
-    $dotenv = Dotenv::createImmutable(__DIR__);
-    $dotenv->load();
-    
-    // Ensure required environment variables are set
-    $dotenv->required([
-        'MPESA_CONSUMER_KEY',
-        'MPESA_CONSUMER_SECRET',
-        'MPESA_PASSKEY',
-        'MPESA_SHORTCODE',
-        'MPESA_CALLBACK_URL'
-    ]);
-    
-} catch (Exception $e) {
-    sendJsonResponse(['error' => 'Error loading environment variables: ' . $e->getMessage()], 500);
-}
-
-// Handle AJAX request
-if ($_SERVER["REQUEST_METHOD"] == "POST") {
-    // Check if it's an AJAX request
-    $isAjax = !empty($_SERVER['HTTP_X_REQUESTED_WITH']) && 
-              strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) == 'xmlhttprequest';
-    
-    $phone = $_POST["phone"] ?? '';
-    $amount = $_POST["amount"] ?? 0;
-
-    // Basic input validation
-    if (empty($phone) || empty($amount)) {
-        $response = ['error' => 'Phone number and amount are required'];
-        sendJsonResponse($response, 400);
-    }
-
-    // Validate phone number format
-    if (!preg_match('/^254\d{9}$/', $phone)) {
-        $response = ['error' => 'Please enter a valid M-Pesa number in format 2547XXXXXXXX'];
-        sendJsonResponse($response, 400);
-    }
-
-    // Validate amount
-    if (!is_numeric($amount) || $amount <= 0) {
-        $response = ['error' => 'Please enter a valid amount'];
-        sendJsonResponse($response, 400);
-    }
-
-    try {
-        // Call STK Push
-        $result = stkPush($phone, $amount);
-        
-        if (isset($result['error'])) {
-            sendJsonResponse(['error' => $result['error']], 400);
-        }
-        
-        // If we get here, the STK push was initiated successfully
-        sendJsonResponse([
-            'success' => true,
-            'message' => 'Payment request sent successfully. Please check your phone to complete the payment.'
-        ]);
-        
-    } catch (Exception $e) {
-        sendJsonResponse([
-            'error' => 'Failed to process payment: ' . $e->getMessage()
-        ], 500);
-    }
-}
-
-function stkPush($phoneNumber, $amount) {
-    try {
-        // Load credentials from environment variables using Dotenv
-        $consumerKey    = $_ENV['MPESA_CONSUMER_KEY'] ?? '';
-        $consumerSecret = $_ENV['MPESA_CONSUMER_SECRET'] ?? '';
-        $shortCode      = $_ENV['MPESA_SHORTCODE'] ?? '';
-        $passkey        = $_ENV['MPESA_PASSKEY'] ?? '';
-        $callbackURL    = $_ENV['MPESA_CALLBACK_URL'] ?? '';
-        
-        // Validate required environment variables
-        if (empty($consumerKey) || empty($consumerSecret) || empty($shortCode) || empty($passkey)) {
-            return ['error' => 'One or more required M-Pesa credentials are missing. Please check your .env file.'];
-        }
-
-    // Step 1: Get Access Token
-    $credentials = base64_encode($consumerKey . ":" . $consumerSecret);
-    $tokenURL = "https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials";
-    
-    $ch = curl_init($tokenURL);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, [
-        "Authorization: Basic " . $credentials,
-        "Content-Type: application/json"
-    ]);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-    curl_setopt($ch, CURLOPT_HEADER, false);
-    
-    $response = curl_exec($ch);
-    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    $error = curl_error($ch);
-    curl_close($ch);
-
-    // Debug output
-    echo "<pre>Access Token Response (HTTP $httpCode):\n";
-    print_r($response);
-    echo "\nError: " . ($error ? $error : 'None') . "\n</pre>";
-
-    if ($httpCode !== 200) {
-        throw new Exception("Failed to get access token. HTTP Code: $httpCode");
-    }
-
-    $responseData = json_decode($response);
-    if (json_last_error() !== JSON_ERROR_NONE || !isset($responseData->access_token)) {
-        throw new Exception("Invalid response from M-Pesa API when getting access token");
-    }
-
-    $access_token = $responseData->access_token;
-
-    // Step 2: Generate Password
-    $timestamp = date("YmdHis");
-    $password  = base64_encode($shortCode . $passkey . $timestamp);
-    
-
-    // Step 3: STK Push payload
-    $stkPayload = array(
-        "BusinessShortCode" => $shortCode,
-        "Password"          => $password,
-        "Timestamp"         => $timestamp,
-        "TransactionType"   => "CustomerPayBillOnline",
-        "Amount"            => (int)$amount,
-        "PartyA"            => $phoneNumber,
-        "PartyB"            => $shortCode,
-        "PhoneNumber"       => $phoneNumber,
-        "CallBackURL"       => $callbackURL,
-        "AccountReference"  => "Invoice" . time(),
-        "TransactionDesc"   => "Payment for services"
-    );
-
-    // Debug: Show the payload being sent
-    echo "<pre>STK Push Payload:\n";
-    print_r($stkPayload);
-    echo "</pre>";
-
-    $stkURL = "https://sandbox.safaricom.co.ke/mpesa/stkpush/v1/processrequest";
-    $curl = curl_init();
-    curl_setopt_array($curl, [
-        CURLOPT_URL => $stkURL,
-        CURLOPT_HTTPHEADER => [
-            'Content-Type: application/json',
-            'Authorization: Bearer ' . $access_token,
-            'Cache-Control: no-cache'
-        ],
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_POST => true,
-        CURLOPT_POSTFIELDS => json_encode($stkPayload),
-        CURLOPT_SSL_VERIFYPEER => false,
-        CURLOPT_TIMEOUT => 30
-    ]);
-    curl_setopt($curl, CURLOPT_HEADER, false);
-
-    $response = curl_exec($curl);
-    $httpCode = curl_getinfo($curl, CURLINFO_HTTP_CODE);
-    $error = curl_error($curl);
-    
-    // Debug: Show the raw response
-    echo "<pre>STK Push Response (HTTP $httpCode):\n";
-    print_r($response);
-    echo "\nError: " . ($error ? $error : 'None') . "\n</pre>";
-    
-    curl_close($curl);
-
-    // Process the response
-    if ($httpCode !== 200) {
-        throw new Exception("Failed to initiate STK push. HTTP Code: $httpCode. Response: $response");
-    }
-
-    $responseData = json_decode($response, true);
-    if (json_last_error() !== JSON_ERROR_NONE) {
-        throw new Exception("Invalid JSON response from M-Pesa API: " . $response);
-    }
-    
-
-    // Check for specific error codes
-    if (isset($responseData['errorCode'])) {
-        throw new Exception("{$responseData['errorMessage']} (Error Code: {$responseData['errorCode']})");
-    }
-    
-    return $responseData;
-    
-    } catch (Exception $e) {
-        // Display a user-friendly error message
-        echo "<div class='alert alert-danger'>";
-        echo "<strong>Error:</strong> " . htmlspecialchars($e->getMessage());
-        echo "</div>";
-        
-        // Log the error for debugging
-        error_log("M-Pesa Payment Error: " . $e->getMessage());
-    }
-}
+// This is a frontend file
+// The API endpoint is at /api/process_payment.php
 ?>
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -279,6 +70,7 @@ function stkPush($phoneNumber, $amount) {
             color: #dc3545;
             margin-top: 10px;
         }
+    </style>
 </head>
 <body class="bg-light">
     <div class="container py-5">
@@ -415,27 +207,22 @@ function stkPush($phoneNumber, $amount) {
                 // Prepare form data
                 const formData = new FormData(form);
 
-                // Send AJAX request
-                fetch('', {
+                // Send AJAX request to the API endpoint
+                fetch('/api/process_payment.php', {
                     method: 'POST',
                     body: formData
                 })
-                .then(response => response.text())
-                .then(data => {
-                    try {
-                        // Try to parse JSON response
-                        const responseData = JSON.parse(data);
-                        
-                        if (responseData.error) {
-                            throw new Error(responseData.error);
-                        }
-                        
-                        // Show success message
-                        showSuccess();
-                    } catch (e) {
-                        // If not valid JSON or has error, show error
-                        throw new Error('Invalid response from server');
+                .then(async response => {
+                    const data = await response.json().catch(() => ({}));
+                    if (!response.ok) {
+                        const error = new Error(data.error || 'Failed to process payment');
+                        error.response = response;
+                        throw error;
                     }
+                    return data;
+                })
+                .then(data => {
+                    showSuccess(data.message || 'Payment request sent successfully! Please check your phone to complete the payment.');
                 })
                 .catch(error => {
                     console.error('Error:', error);
