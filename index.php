@@ -38,17 +38,44 @@ function stkPush($phoneNumber, $amount) {
     $passkey        = getenv('MPESA_PASSKEY');
     $callbackURL    = getenv('MPESA_CALLBACK_URL');
 
-    // Step 1: Access token
-    $credentials = base64_encode($consumerKey . ":" . $consumerSecret);
+    // Debug: Check if environment variables are loaded
+    if (empty($consumerKey) || empty($consumerSecret)) {
+        die("Error: M-Pesa credentials not found. Please check your .env file.");
+    }
 
-    $ch = curl_init();
-    curl_setopt($ch, CURLOPT_URL, "https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials");
-    curl_setopt($ch, CURLOPT_HTTPHEADER, array("Authorization: Basic " . $credentials));
+    // Step 1: Get Access Token
+    $credentials = base64_encode($consumerKey . ":" . $consumerSecret);
+    $tokenURL = "https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials";
+    
+    $ch = curl_init($tokenURL);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, [
+        "Authorization: Basic " . $credentials,
+        "Content-Type: application/json"
+    ]);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+    curl_setopt($ch, CURLOPT_HEADER, false);
+    
     $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $error = curl_error($ch);
     curl_close($ch);
 
-    $access_token = json_decode($response)->access_token;
+    // Debug output
+    echo "<pre>Access Token Response (HTTP $httpCode):\n";
+    print_r($response);
+    echo "\nError: " . ($error ? $error : 'None') . "\n</pre>";
+
+    if ($httpCode !== 200) {
+        die("Failed to get access token. HTTP Code: $httpCode");
+    }
+
+    $responseData = json_decode($response);
+    if (json_last_error() !== JSON_ERROR_NONE || !isset($responseData->access_token)) {
+        die("Invalid response from M-Pesa API: " . $response);
+    }
+
+    $access_token = $responseData->access_token;
 
     // Step 2: Password
     $timestamp = date("YmdHis");
@@ -59,32 +86,68 @@ function stkPush($phoneNumber, $amount) {
         "BusinessShortCode" => $shortCode,
         "Password"          => $password,
         "Timestamp"         => $timestamp,
-        "TransactionType"   => "CustomerPayBillOnline", // or CustomerBuyGoodsOnline
+        "TransactionType"   => "CustomerPayBillOnline",
         "Amount"            => (int)$amount,
         "PartyA"            => $phoneNumber,
         "PartyB"            => $shortCode,
         "PhoneNumber"       => $phoneNumber,
         "CallBackURL"       => $callbackURL,
-        "AccountReference"  => "Invoice123",
-        "TransactionDesc"   => "Test Payment"
+        "AccountReference"  => "Invoice" . time(),
+        "TransactionDesc"   => "Payment for services"
     );
 
-    $ch = curl_init();
-    curl_setopt($ch, CURLOPT_URL, "https://sandbox.safaricom.co.ke/mpesa/stkpush/v1/processrequest");
-    curl_setopt($ch, CURLOPT_HTTPHEADER, array(
-        "Content-Type: application/json",
-        "Authorization: Bearer " . $access_token
-    ));
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_POST, true);
-    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($stkPayload));
-
-    $response = curl_exec($ch);
-    curl_close($ch);
-
-    echo "<pre>";
-    print_r(json_decode($response, true));
+    // Debug: Show the payload being sent
+    echo "<pre>STK Push Payload:\n";
+    print_r($stkPayload);
     echo "</pre>";
+
+    $stkURL = "https://sandbox.safaricom.co.ke/mpesa/stkpush/v1/processrequest";
+    $curl = curl_init();
+    curl_setopt($curl, CURLOPT_URL, $stkURL);
+    curl_setopt($curl, CURLOPT_HTTPHEADER, [
+        'Content-Type: application/json',
+        'Authorization: Bearer ' . $access_token,
+        'Cache-Control: no-cache'
+    ]);
+    curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($curl, CURLOPT_POST, true);
+    curl_setopt($curl, CURLOPT_POSTFIELDS, json_encode($stkPayload));
+    curl_setopt($curl, CURLOPT_SSL_VERIFYPEER, false);
+    curl_setopt($curl, CURLOPT_HEADER, false);
+
+    $response = curl_exec($curl);
+    $httpCode = curl_getinfo($curl, CURLINFO_HTTP_CODE);
+    $error = curl_error($curl);
+    
+    // Debug: Show the raw response
+    echo "<pre>STK Push Response (HTTP $httpCode):\n";
+    print_r($response);
+    echo "\nError: " . ($error ? $error : 'None') . "\n</pre>";
+    
+    curl_close($curl);
+
+    // Process the response
+    if ($httpCode !== 200) {
+        die("Failed to initiate STK push. HTTP Code: $httpCode");
+    }
+
+    $responseData = json_decode($response, true);
+    if (json_last_error() !== JSON_ERROR_NONE) {
+        die("Invalid JSON response from M-Pesa API: " . $response);
+    }
+
+    // Display the response in a more readable format
+    echo "<h3>Payment Request Status</h3>";
+    echo "<pre>";
+    print_r($responseData);
+    echo "</pre>";
+    
+    // Check for specific error codes
+    if (isset($responseData['errorCode'])) {
+        echo "<div class='alert alert-danger'>";
+        echo "<strong>Error {$responseData['errorCode']}:</strong> {$responseData['errorMessage']}";
+        echo "</div>";
+    }
 }
 ?>
 
