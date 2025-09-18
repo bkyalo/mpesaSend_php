@@ -1,4 +1,24 @@
 <?php
+// Debug: Check environment variables
+function debugEnvVars() {
+    $required = ['MPESA_CONSUMER_KEY', 'MPESA_CONSUMER_SECRET', 'MPESA_PASSKEY', 'MPESA_SHORTCODE'];
+    $envVars = [];
+    
+    foreach ($required as $var) {
+        $envVars[$var] = getenv($var) ? 'Set' : 'Not Set';
+    }
+    
+    echo '<pre>';
+    echo 'Environment Variables Status:\n';
+    print_r($envVars);
+    echo '\nCurrent Directory: ' . __DIR__ . '\n';
+    echo 'File Exists: ' . (file_exists(__DIR__ . '/.env') ? 'Yes' : 'No') . '\n';
+    echo '</pre>';
+}
+
+// Debug environment variables
+debugEnvVars();
+
 if ($_SERVER["REQUEST_METHOD"] == "POST") {
     $phone = $_POST["phone"];
     $amount = $_POST["amount"];
@@ -10,20 +30,58 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 // Load environment variables from .env file
 function loadEnv() {
     $envFile = __DIR__ . '/.env';
-    if (file_exists($envFile)) {
-        $lines = file($envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-        foreach ($lines as $line) {
-            if (strpos(trim($line), '#') === 0) continue; // Skip comments
+    
+    // Debug: Check if .env file exists and is readable
+    if (!file_exists($envFile)) {
+        die("Error: .env file not found at: " . $envFile);
+    }
+    
+    if (!is_readable($envFile)) {
+        die("Error: .env file is not readable. Check permissions.");
+    }
+    
+    $lines = file($envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+    if ($lines === false) {
+        die("Error: Failed to read .env file");
+    }
+    
+    foreach ($lines as $line) {
+        $line = trim($line);
+        
+        // Skip comments and empty lines
+        if (empty($line) || strpos($line, '#') === 0) {
+            continue;
+        }
+        
+        // Parse the line into name and value
+        if (strpos($line, '=') !== false) {
+            list($name, $value) = array_map('trim', explode('=', $line, 2));
             
-            list($name, $value) = explode('=', $line, 2);
-            $name = trim($name);
-            $value = trim($value);
+            // Remove optional quotes from the value
+            $value = trim($value, '"\'');
             
+            // Set the environment variable if it doesn't exist
             if (!array_key_exists($name, $_ENV)) {
                 $_ENV[$name] = $value;
                 putenv("$name=$value");
             }
         }
+    }
+    
+    // Debug: Check if required variables are set
+    $requiredVars = ['MPESA_CONSUMER_KEY', 'MPESA_CONSUMER_SECRET', 'MPESA_PASSKEY', 'MPESA_SHORTCODE'];
+    $missingVars = [];
+    
+    foreach ($requiredVars as $var) {
+        if (empty(getenv($var))) {
+            $missingVars[] = $var;
+        }
+    }
+    
+    if (!empty($missingVars)) {
+        die("Error: The following required environment variables are missing or empty: " . 
+            implode(', ', $missingVars) . 
+            ". Please check your .env file.");
     }
 }
 
